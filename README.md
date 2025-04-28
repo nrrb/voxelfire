@@ -7,7 +7,6 @@
 - Use the control panel to adjust fire properties:
   - Intensity: Controls how fast the fire updates
   - Size: Changes the dimensions of the fire effect
-  - Presets: Quick configurations for different fire styles
   - Play/Pause: Toggles the fire animation
 
 ## Performance Considerations
