@@ -1,5 +1,9 @@
 # Voxel Fire
 
+The demoscene fire effect in 3D. 
+
+Based on the fire calculations in this article: https://lodev.org/cgtutor/fire.html
+
 ## Controls
 
 - Drag with the mouse to rotate the view
