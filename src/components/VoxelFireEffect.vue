@@ -1,3 +1,4 @@
+<!-- src/components/VoxelFireEffect.vue -->
 <template>
   <div class="voxel-fire-container">
     <div id="scene-container" ref="containerRef"></div>
@@ -24,19 +25,10 @@
         </div>
 
         <div class="control-group">
-          <label>Fire Size</label>
+          <label>Fire Depth: {{ store.fireDepth }}</label>
           <div class="button-group">
-            <button @click="store.applySmallFirePreset" class="btn">Small</button>
-            <button @click="store.applyMediumFirePreset" class="btn">Medium</button>
-            <button @click="store.applyLargeFirePreset" class="btn">Large</button>
-          </div>
-        </div>
-
-        <div class="control-group">
-          <label>Presets</label>
-          <div class="button-group">
-            <button @click="store.applyGentleFirePreset" class="btn">Gentle</button>
-            <button @click="store.applyIntenseFirePreset" class="btn">Intense</button>
+            <button @click="adjustDepth(-1)" class="btn" :disabled="store.fireDepth <= 1">-1</button>
+            <button @click="adjustDepth(1)" class="btn">+1</button>
           </div>
         </div>
 
@@ -47,6 +39,72 @@
           >
             {{ store.isPlaying ? 'Pause' : 'Play' }}
           </button>
+        </div>
+
+        <div class="control-group">
+          <label>Camera Position</label>
+          <div class="coord-inputs">
+            <div class="coord-input">
+              <span>X:</span>
+              <input
+                type="number"
+                step="1"
+                :value="store.cameraPosition.x"
+                @input="onCameraPosChange('x', $event)"
+              />
+            </div>
+            <div class="coord-input">
+              <span>Y:</span>
+              <input
+                type="number"
+                step="1"
+                :value="store.cameraPosition.y"
+                @input="onCameraPosChange('y', $event)"
+              />
+            </div>
+            <div class="coord-input">
+              <span>Z:</span>
+              <input
+                type="number"
+                step="1"
+                :value="store.cameraPosition.z"
+                @input="onCameraPosChange('z', $event)"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label>Camera Rotation</label>
+          <div class="coord-inputs">
+            <div class="coord-input">
+              <span>X:</span>
+              <input
+                type="number"
+                step="0.1"
+                :value="store.cameraRotation.x"
+                @input="onCameraRotChange('x', $event)"
+              />
+            </div>
+            <div class="coord-input">
+              <span>Y:</span>
+              <input
+                type="number"
+                step="0.1"
+                :value="store.cameraRotation.y"
+                @input="onCameraRotChange('y', $event)"
+              />
+            </div>
+            <div class="coord-input">
+              <span>Z:</span>
+              <input
+                type="number"
+                step="0.1"
+                :value="store.cameraRotation.z"
+                @input="onCameraRotChange('z', $event)"
+              />
+            </div>
+          </div>
         </div>
 
         <div class="performance-stats">
@@ -76,12 +134,17 @@ import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useFireEffectStore } from '@/stores/fireEffectStore';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { createNoise3D } from 'simplex-noise';
 
 // Store for fire effect configuration
 const store = useFireEffectStore();
 
 // Reference to the container element
 const containerRef = ref(null);
+
+// Values for the Perlin noise bottom level of the fire
+const noise3D = createNoise3D();
+let noiseOffset = 0;
 
 // Variables to hold Three.js objects
 let scene, camera, renderer, controls;
@@ -99,6 +162,30 @@ const onIntensityChange = (event) => {
   store.setFireUpdateInterval(100 - intensity);
 };
 
+const onCameraPosChange = (axis, event) => {
+  const value = Number(event.target.value);
+  const newPos = { ...store.cameraPosition, [axis]: value };
+  store.setCameraPosition(newPos.x, newPos.y, newPos.z);
+  if (camera) {
+    camera.position.set(newPos.x, newPos.y, newPos.z);
+  }
+};
+
+const onCameraRotChange = (axis, event) => {
+  const value = Number(event.target.value);
+  const newRot = { ...store.cameraRotation, [axis]: value };
+  store.setCameraRotation(newRot.x, newRot.y, newRot.z);
+  if (camera) {
+    camera.rotation.set(newRot.x, newRot.y, newRot.z);
+  }
+};
+
+const adjustDepth = (change) => {
+  const newDepth = Math.max(1, store.fireDepth + change);
+  store.setFireDimensions(store.fireWidth, store.fireHeight, newDepth);
+  rebuildScene();
+};
+
 // Initialize Three.js scene
 const initScene = () => {
   // Scene setup
@@ -107,7 +194,8 @@ const initScene = () => {
 
   // Camera setup
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 20, 40);
+  camera.position.set(store.cameraPosition.x, store.cameraPosition.y, store.cameraPosition.z);
+  camera.rotation.set(store.cameraRotation.x, store.cameraRotation.y, store.cameraRotation.z);
 
   // Renderer setup
   renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -118,7 +206,8 @@ const initScene = () => {
 
   // Add controls
   controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 10, 0);
+  controls.addEventListener('change', () => store.updateCameraFromOrbitControls(camera));
+  controls.target.set(0, 0, 0);
   controls.update();
 
   // Create fire palette
@@ -129,7 +218,12 @@ const initScene = () => {
 
   // Create voxel geometry and material
   voxelGeometry = new THREE.BoxGeometry(store.voxelSize, store.voxelSize, store.voxelSize);
-  voxelMaterial = new THREE.MeshBasicMaterial();
+  voxelMaterial = new THREE.MeshBasicMaterial({
+    transparent: false,
+    opacity: 1,
+    depthWrite: true,
+    depthTest: true
+  });
 
   // Create instanced mesh for better performance
   const maxVoxels = store.maxVoxels;
@@ -193,11 +287,27 @@ const initFireData = () => {
 
 // Set fire source values
 const setFireSource = () => {
+  noiseOffset += 0.03;
+
   // The bottom row of the fire effect has the maximum heat
   const y = 0;
   for (let x = 0; x < store.fireWidth; x++) {
     for (let z = 0; z < store.fireDepth; z++) {
-      firePixels[x][y][z] = palette.length - 1;
+      const noiseX = x * 0.1;
+      const noiseZ = z * 0.1;
+
+      let noiseValue = noise3D(noiseX, noiseOffset, noiseZ);
+
+      // noiseValue will be in the range (-1, 1) and we want (0, 1)
+      noiseValue = (noiseValue + 1) / 2;
+
+      noiseValue = Math.pow(noiseValue, 1.5);
+
+      const minIntensity = 10;
+      const maxIntensity = palette.length - 1;
+      const fireIntensity = Math.floor(minIntensity + noiseValue * (maxIntensity - minIntensity));
+
+      firePixels[x][y][z] = fireIntensity;
     }
   }
 };
@@ -366,6 +476,16 @@ watch(() => [store.fireWidth, store.fireHeight, store.fireDepth, store.voxelSize
   { deep: true }
 );
 
+// Watch for opacity changes
+watch(() => store.opacity,
+  (newOpacity) => {
+    if (voxelMaterial) {
+      voxelMaterial.opacity = newOpacity;
+      voxelMaterial.needsUpdate = true;
+    }
+  }
+);
+
 // Initialize on mount
 onMounted(() => {
   initScene();
@@ -401,6 +521,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100vh;
   overflow: hidden;
+  display: flex;
 }
 
 #scene-container {
@@ -409,14 +530,17 @@ onBeforeUnmount(() => {
 }
 
 .controls-panel {
-  position: absolute;
+  position: fixed;
   top: 1rem;
   right: 1rem;
   background-color: rgba(0, 0, 0, 0.7);
   color: white;
   border-radius: 0.5rem;
   width: 300px;
+  max-height: calc(100vh - 2rem);
   z-index: 10;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -435,6 +559,8 @@ onBeforeUnmount(() => {
 
 .controls-body {
   padding: 1rem;
+  overflow-y: auto;
+  flex: 1;
 }
 
 .control-group {
@@ -471,5 +597,106 @@ onBeforeUnmount(() => {
   cursor: pointer;
   font-size: 0.875rem;
   transition: background-color 0.2s;
+}
+
+.btn:hover {
+  background-color: #555555;
+}
+
+.btn:active {
+  background-color: #333333;
+}
+
+.btn-primary {
+  background-color: #ff6600;
+}
+
+.btn-primary:hover {
+  background-color: #ff7722;
+}
+
+.btn-primary:active {
+  background-color: #e65c00;
+}
+
+.btn-small {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.btn-icon {
+  font-weight: bold;
+}
+
+.controls-toggle-btn {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: none;
+  border-radius: 0.25rem;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background-color 0.2s;
+  z-index: 10;
+}
+
+.controls-toggle-btn:hover {
+  background-color: rgba(50, 50, 50, 0.7);
+}
+
+.instructions {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.coord-inputs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.coord-input {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.coord-input span {
+  font-size: 0.875rem;
+  color: #cccccc;
+  width: 1rem;
+}
+
+.coord-input input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.25rem;
+  color: white;
+  padding: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.coord-input input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.performance-stats {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 0.75rem;
+  color: #cccccc;
 }
 </style>

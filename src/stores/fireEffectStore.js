@@ -1,14 +1,18 @@
-// src/stores/fireEffectStore.js
 import { defineStore } from 'pinia';
 
 export const useFireEffectStore = defineStore('fireEffect', {
   state: () => ({
     // Fire configuration
-    fireWidth: 20,
-    fireHeight: 30,
-    fireDepth: 20,
-    voxelSize: 0.5,
-    fireUpdateInterval: 50,
+    fireWidth: 100,
+    fireHeight: 40,
+    fireDepth: 4,
+    voxelSize: 3,
+    fireUpdateInterval: 25, // 75% intensity
+    opacity: 1, // Fully opaque voxels
+
+    // Camera settings
+    cameraPosition: { x: -28.86, y: 46.92, z: -267.69 },
+    cameraRotation: { x: Math.PI, y: 0, z: Math.PI },
 
     // UI state
     isPlaying: true,
@@ -29,16 +33,25 @@ export const useFireEffectStore = defineStore('fireEffect', {
     setFireDimensions(width, height, depth) {
       this.fireWidth = width;
       this.fireHeight = height;
-      this.fireDepth = depth;
+      this.fireDepth = Math.max(1, depth); // Ensure minimum depth of 1
+    },
+
+    adjustFireDepth(change) {
+      this.fireDepth = Math.max(1, this.fireDepth + change);
     },
 
     setVoxelSize(size) {
       this.voxelSize = size;
     },
 
+    setOpacity(value) {
+      // Clamp to valid opacity range (0-1)
+      this.opacity = Math.max(0, Math.min(1, value));
+    },
+
     setFireUpdateInterval(interval) {
-      // Clamp to reasonable values (10-200ms)
-      this.fireUpdateInterval = Math.max(10, Math.min(200, interval));
+      // Clamp to reasonable values (1-100ms)
+      this.fireUpdateInterval = Math.max(1, Math.min(100, interval));
     },
 
     togglePlayPause() {
@@ -54,35 +67,28 @@ export const useFireEffectStore = defineStore('fireEffect', {
       this.activeVoxels = activeVoxels;
     },
 
-    // Preset configurations
-    applySmallFirePreset() {
-      this.setFireDimensions(15, 20, 15);
-      this.setVoxelSize(0.6);
-      this.setFireUpdateInterval(60);
+
+
+    // Camera controls
+    setCameraPosition(x, y, z) {
+      this.cameraPosition = { x: Number(x), y: Number(y), z: Number(z) };
     },
 
-    applyMediumFirePreset() {
-      this.setFireDimensions(20, 30, 20);
-      this.setVoxelSize(0.5);
-      this.setFireUpdateInterval(50);
+    setCameraRotation(x, y, z) {
+      this.cameraRotation = { x: Number(x), y: Number(y), z: Number(z) };
     },
 
-    applyLargeFirePreset() {
-      this.setFireDimensions(30, 40, 30);
-      this.setVoxelSize(0.4);
-      this.setFireUpdateInterval(40);
-    },
-
-    applyIntenseFirePreset() {
-      this.setFireDimensions(25, 35, 25);
-      this.setVoxelSize(0.45);
-      this.setFireUpdateInterval(30); // Faster updates = more intense fire
-    },
-
-    applyGentleFirePreset() {
-      this.setFireDimensions(20, 25, 20);
-      this.setVoxelSize(0.5);
-      this.setFireUpdateInterval(80); // Slower updates = gentler fire
+    updateCameraFromOrbitControls(camera) {
+      this.cameraPosition = {
+        x: Number(camera.position.x.toFixed(2)),
+        y: Number(camera.position.y.toFixed(2)),
+        z: Number(camera.position.z.toFixed(2))
+      };
+      this.cameraRotation = {
+        x: Number(camera.rotation.x.toFixed(2)),
+        y: Number(camera.rotation.y.toFixed(2)),
+        z: Number(camera.rotation.z.toFixed(2))
+      };
     }
   }
 });
